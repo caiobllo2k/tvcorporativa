@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>TV Corporativa</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{
+    background:#000;
+    overflow:hidden;
+    font-family:sans-serif;
+    color:#fff;
+  }
+
+  #container{
+    position:relative;
+    width:100vw;
+    height:100vh;
+    overflow:hidden;
+    background:#000;
+  }
+
+  #slideContent{
+    position:absolute;
+    top:0; left:0;
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    z-index:1;
+  }
+
+  #slideContent img,
+  #slideContent video{
+    position:absolute;
+    top:0; left:0;
+    width:100%;
+    height:100%;
+    object-fit:cover;
+  }
+
+  /* categoria no topo */
+  #categoriaBar{
+    position:absolute;
+    top:5%;
+    left:5%;
+    font-size:1em;
+    background:rgba(0,0,0,0.6);
+    color:#fff;
+    padding:4px 12px;
+    border-radius:4px;
+    display:none;
+    z-index:5;
+    font-weight:600;
+  }
+
+  /* título da notícia */
+  #tituloNoticia{
+    position:absolute;
+    bottom:calc(4% + 60px + 20px);
+    left:4%;
+    width:92%;
+    background:rgba(0,0,0,0.65);
+    color:#fff;
+    text-align:center;
+    display:none;
+    z-index:5;
+    font-size:1.18em; /* +18% maior */
+    font-weight:600;
+    padding:4px 12px;
+    border-radius:6px;
+  }
+
+  #barraProgresso{
+    position:absolute;
+    bottom:calc(4% + 60px + 10px);
+    left:4%;
+    width:92%;
+    height:5px;
+    background:limegreen;
+    transition:width linear;
+    will-change:width;
+    z-index:5;
+    border-radius:3px;
+  }
+
+  #barraInferior{
+    position:absolute;
+    bottom:4%;
+    left:4%;
+    width:92%;
+    height:60px;
+    background:#000;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:0 20px;
+    font-size:1.2em;
+    color:#fff;
+    border-radius:6px 6px 0 0;
+    z-index:5;
+  }
+
+  #cotacoes span{ margin-right:20px; }
+  #logo{ height:40px; }
+</style>
+</head>
+<body>
+<div id="container">
+  <div id="slideContent"></div>
+  <div id="categoriaBar"></div>
+  <div id="tituloNoticia"></div>
+  <div id="barraProgresso"></div>
+  <div id="barraInferior">
+    <div id="relogio"></div>
+    <div id="cotacoes">
+      <span id="cotacaoBtc">BTC: --</span>
+      <span id="cotacaoUsd">USD: --</span>
+    </div>
+    <img id="logo" src="images/logo.png" alt="Logo">
+  </div>
+</div>
+
+<script>
+/* Detectar token na URL (player em dispositivo) */
+const params = new URLSearchParams(window.location.search);
+const deviceToken = params.get('token');
+const apiUrl = deviceToken ? `/api/news/me?token=${encodeURIComponent(deviceToken)}` : '/api/news/me';
+
+let noticiasInternas = [];
+let noticiasRSS = [];
+let displayTime = 15000;
+let rssDisplayTime = 5000;
+let listaFinal = [];
+let indiceAtual = 0;
+let loopId = null;
+
+const slideContent = document.getElementById('slideContent');
+const titulo = document.getElementById('tituloNoticia');
+const catBar = document.getElementById('categoriaBar');
+const barra = document.getElementById('barraProgresso');
+
+/* === NOVA FUNÇÃO: alterna sempre 1 upload + 1 notícia === */
+function montarSequenciaIntercalada(uploads, rss) {
+  const resultado = [];
+  if (!uploads.length && !rss.length) return resultado;
+
+  if (!uploads.length) return rss;
+  if (!rss.length) return uploads;
+
+  const maxLen = Math.max(uploads.length, rss.length);
+  for (let i = 0; i < maxLen; i++) {
+    const u = uploads[i % uploads.length];
+    const n = rss[i % rss.length];
+    resultado.push(u, n); // força padrão 1x1
+  }
+  return resultado;
+}
+
+/* === CORES POR CATEGORIA === */
+function corPorCategoria(cat) {
+  if (!cat) return 'rgba(0,0,0,0.6)';
+  const c = cat.toLowerCase();
+  if (c.includes('tecnologia')) return '#ffc107';      // amarelo
+  if (c.includes('política') || c.includes('politica')) return '#0d6efd'; // azul
+  if (c.includes('mundo')) return '#6f42c1';           // roxo
+  if (c.includes('economia')) return '#198754';        // verde
+  if (c.includes('carros')) return '#fd7e14';          // laranja
+  if (c.includes('natureza')) return '#20c997';        // verde água
+  if (c.includes('música') || c.includes('musica')) return '#d63384'; // rosa
+  if (c.includes('educação') || c.includes('educacao')) return '#6610f2'; // roxo escuro
+  if (c.includes('cultura') || c.includes('pop') || c.includes('arte')) return '#e83e8c'; // magenta
+  if (c.includes('planeta')) return '#17a2b8';         // ciano
+  if (c.includes('brasil')) return '#198754';          // verde
+  if (c.includes('concursos')) return '#fd7e14';       // laranja
+  if (c.includes('turismo')) return '#0dcaf0';         // azul claro
+  return '#444'; // fallback neutro
+}
+
+/* === CARREGAMENTO DE NOTÍCIAS === */
+async function carregarNoticias(){
+  try{
+    const res = await fetch(apiUrl,{cache:'no-store'});
+    if(!res.ok) throw new Error('Falha ao carregar conteúdo');
+    const data = await res.json();
+
+    noticiasInternas = (data.uploads || []).map(u=>({
+      title: '',
+      image: u.filename ? '/' + u.filename : '',
+      categoria: null
+    }));
+
+    noticiasRSS = (data.news || []).map(n=>({
+      title: n.title,
+      image: n.image || '',
+      categoria: n.category || ''
+    }));
+
+    displayTime = data.display_time || 15000;
+    rssDisplayTime = data.rss_display_time || 5000;
+
+    listaFinal = montarSequenciaIntercalada(noticiasInternas, noticiasRSS);
+
+    if(loopId) clearTimeout(loopId);
+    indiceAtual = 0;
+    mostrarProximo();
+
+  }catch(e){
+    console.error('Erro ao carregar noticias',e);
+    slideContent.innerHTML = '<p style="color:#fff;text-align:center;margin-top:20%;">Erro ao carregar conteúdo</p>';
+  }
+}
+
+/* === EXIBIÇÃO === */
+function mostrarProximo(){
+  if(listaFinal.length===0){
+    slideContent.innerHTML='<p style="color:#fff;text-align:center;margin-top:20%;">Sem conteúdo disponível</p>';
+    return;
+  }
+
+  const item = listaFinal[indiceAtual % listaFinal.length];
+  indiceAtual++;
+
+  const tempo = item.categoria ? rssDisplayTime : displayTime;
+
+  slideContent.style.opacity = 0;
+
+  setTimeout(()=>{
+    if(item.categoria){
+      catBar.style.display = 'block';
+      catBar.textContent = `FONTE: G1 – ${item.categoria}`;
+      catBar.style.background = corPorCategoria(item.categoria);
+
+      titulo.style.display = 'block';
+      titulo.textContent = item.title || '';
+    } else {
+      catBar.style.display = 'none';
+      titulo.style.display = 'none';
+    }
+
+    if(item.image){
+      if(/\.(mp4|webm|ogg)$/i.test(item.image)){
+        slideContent.innerHTML = `<video src="${item.image}" autoplay muted loop></video>`;
+      } else {
+        slideContent.innerHTML = `<img src="${item.image}" alt="">`;
+      }
+    } else {
+      slideContent.innerHTML = '';
+    }
+
+    slideContent.style.opacity = 1;
+
+    barra.style.transition = 'none';
+    barra.style.width = '0%';
+    void barra.offsetWidth;
+    barra.style.transition = `width ${tempo}ms linear`;
+    barra.style.width = '92%';
+
+  },250);
+
+  loopId = setTimeout(mostrarProximo, tempo);
+}
+
+/* === RELÓGIO === */
+function atualizarRelogio(){
+  const now = new Date();
+  document.getElementById('relogio').textContent =
+    now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+setInterval(atualizarRelogio,1000);
+atualizarRelogio();
+
+/* === COTAÇÕES === */
+async function atualizarCotacoes(){
+  try{
+    const res = await fetch('/api/ticker',{cache:'no-store'});
+    const data = await res.json();
+    if(data.btc) document.getElementById('cotacaoBtc').textContent =
+      `BTC: R$ ${Number(data.btc).toLocaleString('pt-BR')}`;
+    if(data.usd) document.getElementById('cotacaoUsd').textContent =
+      `USD: R$ ${Number(data.usd).toLocaleString('pt-BR')}`;
+  }catch(e){
+    console.error('Erro ao atualizar cotações',e);
+  }
+}
+setInterval(atualizarCotacoes,60000);
+atualizarCotacoes();
+
+/* === REFRESH AUTOMÁTICO === */
+let ultimaAtualizacao = Date.now();
+async function checarRefresh(){
+  try{
+    const res = await fetch('/api/refresh-time',{cache:'no-store'});
+    const data = await res.json();
+    if(data.time && data.time>ultimaAtualizacao){
+      ultimaAtualizacao = data.time;
+      carregarNoticias();
+    }
+  }catch(e){ console.error(e); }
+}
+setInterval(checarRefresh,30000);
+
+/* === INÍCIO === */
+carregarNoticias();
+</script>
+</body>
+</html>

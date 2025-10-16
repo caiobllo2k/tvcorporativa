@@ -1,0 +1,6 @@
+node_modules/
+sessions.sqlite
+database.sqlite
+rss-cache/
+*.log
+.env

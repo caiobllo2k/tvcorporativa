@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Painel do Administrador</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f4;
+      margin: 0;
+      padding: 0;
+    }
+    header {
+      background: #333;
+      color: #fff;
+      padding: 15px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    header a { color:#fff; text-decoration:none; font-weight:bold; }
+
+    main {
+      padding: 20px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    section {
+      background: #fff;
+      padding: 20px;
+      margin-bottom: 20px;
+      border-radius: 6px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    input, select, button {
+      padding: 8px;
+      margin-bottom: 10px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+      margin-right: 5px;
+      border-radius:4px;
+    }
+
+    button:hover { background: #0056b3; }
+
+    ul { list-style: none; padding: 0; }
+
+    li {
+      padding: 8px;
+      background: #f9f9f9;
+      margin-bottom: 5px;
+      border-radius: 4px;
+    }
+
+    .acoes {
+      display: flex;
+      gap: 8px;
+      margin-top:6px;
+    }
+
+    .token-box {
+      background:#eef;
+      padding:8px;
+      margin:5px 0;
+      border-radius:4px;
+      font-size:0.9em;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+    }
+    .token-box button { background:#dc3545; }
+    .token-box button:hover { background:#a71d2a; }
+
+    .token-list { margin-top:6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Painel do Administrador</h1>
+    <a href="/logout">Sair</a>
+  </header>
+
+  <main>
+    <!-- Criar novo usuário -->
+    <section>
+      <h2>Criar Usuário</h2>
+      <input type="text" id="novoUsuario" placeholder="Nome de Usuário">
+      <input type="password" id="novaSenha" placeholder="Senha">
+      <select id="novoRole">
+        <option value="user">Usuário</option>
+        <option value="admin">Administrador</option>
+      </select>
+      <button onclick="criarUsuario()">Criar Usuário</button>
+    </section>
+
+    <!-- Lista de usuários -->
+    <section>
+      <h2>Usuários Existentes</h2>
+      <ul id="listaUsuarios"></ul>
+    </section>
+  </main>
+
+<script>
+async function carregarUsuarios() {
+  const res = await fetch('/api/users');
+  if (!res.ok) {
+    alert('Erro ao carregar usuários.');
+    return;
+  }
+
+  const usuarios = await res.json();
+  const lista = document.getElementById('listaUsuarios');
+  lista.innerHTML = '';
+
+  usuarios.forEach(u => {
+    const li = document.createElement('li');
+    li.innerHTML = `
+      <strong>${u.username} (${u.role})</strong>
+      <div class="acoes">
+        <button onclick="alterarSenha(${u.id})">Alterar Senha</button>
+        <button onclick="deletarUsuario(${u.id})">Excluir Usuário</button>
+        <button onclick="mostrarTokens(${u.id}, this)">Gerenciar Token</button>
+      </div>
+      <div class="token-list" id="tokens-${u.id}" style="display:none;"></div>
+    `;
+    lista.appendChild(li);
+  });
+}
+
+async function criarUsuario() {
+  const username = document.getElementById('novoUsuario').value.trim();
+  const password = document.getElementById('novaSenha').value.trim();
+  const role = document.getElementById('novoRole').value;
+
+  if (!username || !password) {
+    alert('Preencha todos os campos.');
+    return;
+  }
+
+  const res = await fetch('/api/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password, role })
+  });
+
+  if (res.ok) {
+    alert('Usuário criado com sucesso!');
+    carregarUsuarios();
+  } else {
+    alert('Erro ao criar usuário.');
+  }
+}
+
+async function deletarUsuario(id) {
+  if (!confirm('Tem certeza que deseja excluir este usuário?')) return;
+
+  const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+
+  if (res.ok) {
+    alert('Usuário excluído com sucesso!');
+    carregarUsuarios();
+  } else {
+    alert('Erro ao excluir usuário.');
+  }
+}
+
+async function alterarSenha(id) {
+  const novaSenha = prompt('Digite a nova senha:');
+  if (!novaSenha) return;
+
+  const res = await fetch(`/api/users/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: novaSenha })
+  });
+
+  if (res.ok) {
+    alert('Senha alterada com sucesso!');
+  } else {
+    alert('Erro ao alterar a senha.');
+  }
+}
+
+// ======================= TOKENS =======================
+async function mostrarTokens(userId, btn) {
+  const tokenBox = document.getElementById(`tokens-${userId}`);
+  const isVisible = tokenBox.style.display === 'block';
+  document.querySelectorAll('.token-list').forEach(el => el.style.display='none');
+  if (isVisible) {
+    tokenBox.style.display = 'none';
+    return;
+  }
+
+  const res = await fetch(`/api/devices?user_id=${userId}`);
+  if (!res.ok) {
+    alert('Erro ao carregar tokens.');
+    return;
+  }
+
+  const tokens = await res.json();
+  tokenBox.innerHTML = `
+    <button style="background:#28a745;margin-bottom:6px;" onclick="criarToken(${userId})">Criar Novo Token</button>
+  `;
+
+  if (tokens.length === 0) {
+    tokenBox.innerHTML += `<p>Nenhum token criado ainda.</p>`;
+  } else {
+    tokens.forEach(t => {
+      const url = `${window.location.origin}/?token=${t.token}`;
+      tokenBox.innerHTML += `
+        <div class="token-box">
+          <span>${url}</span>
+          <div>
+            <button onclick="copiarTexto('${url}')">Copiar</button>
+            <button onclick="deletarToken(${t.id}, ${userId})">Excluir</button>
+          </div>
+        </div>
+      `;
+    });
+  }
+  tokenBox.style.display = 'block';
+}
+
+async function criarToken(userId) {
+  const nome = prompt('Nome para identificar este dispositivo (ex.: TV da Recepção):');
+  if (nome === null) return;
+
+  const res = await fetch('/api/devices', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId, name: nome })
+  });
+
+  if (res.ok) {
+    alert('Token criado com sucesso!');
+    mostrarTokens(userId);
+  } else {
+    alert('Erro ao criar token.');
+  }
+}
+
+async function deletarToken(tokenId, userId) {
+  if (!confirm('Deseja excluir este token?')) return;
+
+  const res = await fetch(`/api/devices/${tokenId}`, { method: 'DELETE' });
+  if (res.ok) {
+    alert('Token removido!');
+    mostrarTokens(userId);
+  } else {
+    alert('Erro ao excluir token.');
+  }
+}
+
+function copiarTexto(txt) {
+  navigator.clipboard.writeText(txt).then(() => alert('URL copiada!'));
+}
+
+window.onload = carregarUsuarios;
+</script>
+</body>
+</html>
