@@ -1,254 +1,361 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <title>Painel – TV Corporativa</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel do Cliente — TV Corporativa</title>
+  <link rel="icon" href="images/logo.png" type="image/png">
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; color:#111 }
-    .container { max-width: 900px; margin: auto; }
-    .box { border:1px solid #ddd; border-radius:8px; padding:16px; margin-bottom:20px; }
-    h1 { margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center; }
-    h2 { margin:0 0 12px 0; }
-    label { display:block; margin:8px 0; }
-    button { background:#0b63ff; color:#fff; border:0; padding:10px 16px; border-radius:6px; cursor:pointer; }
-    button:hover { background:#084ccc; }
-    input[type="file"] { display:block; margin:8px 0 12px; }
-
-    /* Lista de arquivos */
-    ul { list-style:none; padding:0; margin:0; }
-    li { display:flex; align-items:center; justify-content:space-between;
-         padding:8px; border-bottom:1px solid #eee; }
-    li img { height:40px; width:auto; margin-right:10px; }
-    .file-info { display:flex; align-items:center; gap:10px; }
-    .del-btn { background:#d9534f; padding:6px 12px; border-radius:4px; }
-    .del-btn:hover { background:#c9302c; }
-
-    .logout-btn { background:#d9534f; }
-    .logout-btn:hover { background:#c9302c; }
-
-    /* Feeds */
-    .feed-grid{
-      display:grid;
-      grid-template-columns: repeat(2, minmax(0,1fr));
-      gap:6px 16px;
-      margin-top:8px;
+    :root {
+      --primary: #1e88e5;
+      --accent: #43a047;
+      --bg-dark: #121212;
+      --bg-card: #1e1e1e;
+      --text: #f1f1f1;
+      --muted: #b0b0b0;
+      --danger: #e53935;
     }
-    .feed-grid label { display:flex; gap:8px; align-items:center; }
+
+    body {
+      font-family: 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-dark);
+      color: var(--text);
+      margin: 0;
+      padding: 0;
+    }
+
+    header {
+      background: var(--primary);
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+    }
+
+    header h1 {
+      font-size: 1.3rem;
+      margin: 0;
+    }
+
+    .header-buttons {
+      display: flex;
+      gap: 10px;
+    }
+
+    header button {
+      background: #fff;
+      color: var(--primary);
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: 0.3s;
+    }
+
+    header button:hover {
+      background: #e0e0e0;
+    }
+
+    main {
+      padding: 20px;
+      max-width: 1200px;
+      margin: auto;
+    }
+
+    section {
+      background: var(--bg-card);
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 25px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+    }
+
+    h2 {
+      margin-top: 0;
+      font-size: 1.2rem;
+      color: var(--primary);
+      border-left: 4px solid var(--primary);
+      padding-left: 10px;
+    }
+
+    input[type="file"], input[type="number"] {
+      width: 100%;
+      padding: 10px;
+      border-radius: 6px;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      color: var(--text);
+      margin-bottom: 10px;
+    }
+
+    input[type="checkbox"] {
+      transform: scale(1.2);
+      margin-right: 8px;
+    }
+
+    label {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    button.action {
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 10px 20px;
+      cursor: pointer;
+      transition: background 0.3s;
+      margin-right: 10px;
+      font-weight: 600;
+    }
+
+    button.action:hover {
+      background: #1565c0;
+    }
+
+    button.green {
+      background: var(--accent);
+    }
+    button.green:hover {
+      background: #2e7d32;
+    }
+
+    #uploads-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 15px;
+    }
+
+    .upload-card {
+      background: #181818;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+      text-align: center;
+      position: relative;
+    }
+
+    .upload-card img, .upload-card video {
+      width: 100%;
+      height: 150px;
+      object-fit: cover;
+      border-bottom: 1px solid #333;
+    }
+
+    .upload-card small {
+      display: block;
+      padding: 8px;
+      color: var(--muted);
+    }
+
+    .delete-btn {
+      background: var(--danger);
+      border: none;
+      color: white;
+      border-radius: 4px;
+      padding: 5px 10px;
+      cursor: pointer;
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      opacity: 0.85;
+    }
+
+    .delete-btn:hover {
+      opacity: 1;
+      background: #b71c1c;
+    }
+
+    /* Feed buttons */
+    .feed-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 15px;
+      margin-bottom: 15px;
+      justify-content: flex-start;
+    }
+
+    .feed-btn {
+      background: #2a2a2a;
+      border: 1px solid #444;
+      color: #ccc;
+      border-radius: 25px;
+      padding: 8px 18px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      font-size: 0.9rem;
+    }
+
+    .feed-btn.active {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+
+    .feed-btn:hover {
+      border-color: var(--primary);
+      color: #fff;
+      background: #1a1a1a;
+    }
+
   </style>
 </head>
 <body>
-<div class="container">
-  <h1>
-    Gerenciamento da TV Corporativa
-    <a href="/logout"><button class="logout-btn">Sair</button></a>
-  </h1>
+  <header>
+    <h1>🎬 Painel do Cliente</h1>
+    <div class="header-buttons">
+      <button onclick="openPlayer()">Ver Player</button>
+      <button onclick="logout()">Sair</button>
+    </div>
+  </header>
 
-  <!-- Upload -->
-  <div class="box">
-    <h2>Upload de Arquivos</h2>
-    <form action="/upload" method="POST" enctype="multipart/form-data">
-      <input type="file" name="arquivo" required />
-      <button type="submit">Enviar</button>
-    </form>
-    <small>Formatos aceitos: imagens (jpg, png, gif, webp) e vídeos (mp4, webm etc.).</small>
-  </div>
+  <main>
+    <section>
+      <h2>📤 Enviar Novo Arquivo</h2>
+      <form id="upload-form" enctype="multipart/form-data" method="POST" action="/upload">
+        <input type="file" name="arquivo" required>
+        <button class="action" type="submit">Enviar</button>
+      </form>
+    </section>
 
-  <!-- Lista de Arquivos -->
-  <div class="box">
-    <h2>Meus Arquivos em Produção</h2>
-    <ul id="listaUploads"></ul>
-  </div>
+    <section>
+      <h2>⚙️ Configurações</h2>
+      <label>Tempo de exibição (ms):</label>
+      <input type="number" id="display_time" min="3000" step="1000">
 
-  <!-- Configurações -->
-  <div class="box">
-    <h2>Configurações</h2>
-    <label>
-      Tempo de exibição (ms):
-      <input id="displayTime" type="number" min="5000" step="1000" placeholder="15000" />
-    </label>
-    <label>
-      <input id="disableRss" type="checkbox" />
-      Desabilitar notícias do G1
-    </label>
+      <label><input type="checkbox" id="disable_rss"> Desativar notícias do G1</label>
 
-    <!-- NOVO: Seleção de Feeds (mostrado quando RSS estiver habilitado) -->
-    <div id="feedOptions" style="display:none; margin:10px 0; padding:10px; background:#f9f9f9; border-radius:6px;">
-      <strong>Selecione os feeds do G1:</strong>
-      <div class="feed-grid">
-        <label><input type="checkbox" value="https://g1.globo.com/dynamo/brasil/rss2.xml"> Brasil</label>
-        <label><input type="checkbox" value="https://g1.globo.com/dynamo/carros/rss2.xml"> Carros (Autoesporte.com)</label>
-        <label><input type="checkbox" value="https://g1.globo.com/dynamo/ciencia-e-saude/rss2.xml"> Ciência e Saúde</label>
-        <label><input type="checkbox" value="https://g1.globo.com/dynamo/concursos-e-emprego/rss2.xml"> Concursos e Emprego</label>
-        <label><input type="checkbox" value="https://g1.globo.com/dynamo/economia/rss2.xml"> Economia</label>
-        <label><input type="checkbox" value="https://g1.globo.com/dynamo/educacao/rss2.xml"> Educação</label>
-        <label><input type="checkbox" value="https://g1.globo.com/dynamo/loterias/rss2.xml"> Loterias</label>
-        <label><input type="checkbox" value="https://g1.globo.com/dynamo/mundo/rss2.xml"> Mundo</label>
-        <label><input type="checkbox" value="https://g1.globo.com/dynamo/musica/rss2.xml"> Música</label>
-        <label><input type="checkbox" value="https://g1.globo.com/dynamo/natureza/rss2.xml"> Natureza</label>
-        <label><input type="checkbox" value="https://g1.globo.com/dynamo/planeta-bizarro/rss2.xml"> Planeta Bizarro</label>
-        <label><input type="checkbox" value="https://g1.globo.com/dynamo/politica/mensalao/rss2.xml"> Política</label>
-        <label><input type="checkbox" value="https://g1.globo.com/dynamo/pop-arte/rss2.xml"> Pop & Arte</label>
-        <label><input type="checkbox" value="https://g1.globo.com/dynamo/tecnologia/rss2.xml"> Tecnologia e Games</label>
-        <label><input type="checkbox" value="https://g1.globo.com/dynamo/turismo-e-viagem/rss2.xml"> Turismo e Viagem</label>
+      <div id="feed-container">
+        <h3 style="color:var(--muted);margin-top:15px;">Selecione os feeds do G1:</h3>
+        <div class="feed-buttons" id="feed-buttons"></div>
       </div>
-    </div>
-  </div>
 
-  <!-- Player -->
-  <div class="box">
-    <h2>Controle do Player</h2>
-    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-      <button id="btnSalvar" onclick="salvarConfig()">Salvar Configurações</button>
-      <button id="btnAtualizar" onclick="forcarAtualizacao()">Atualizar Player Agora</button>
-    </div>
-    <p>O player também verifica automaticamente por novas atualizações a cada 30 segundos.</p>
-    <p><a href="/index.html" target="_blank">Abrir TV Corporativa</a></p>
-  </div>
-</div>
+      <button class="action" onclick="saveSettings()">Salvar Configurações</button>
+      <button class="action green" onclick="refreshPlayers()">Atualizar Players Agora</button>
+    </section>
 
-<script>
-async function salvarConfig(){
-  const display_time = Number(document.getElementById('displayTime').value) || 15000;
-  const disable_rss  = document.getElementById('disableRss').checked ? 1 : 0;
+    <section>
+      <h2>📁 Arquivos Enviados</h2>
+      <div id="uploads-container">Carregando uploads...</div>
+    </section>
+  </main>
 
-  try{
-    const r = await fetch('/api/settings', {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json' },
-      body: JSON.stringify({ display_time, disable_rss })
-    });
-    if(!r.ok) throw new Error();
-  }catch(_){
-    alert('Erro ao salvar configurações.');
-    return;
-  }
+  <script>
+    const feedsList = {
+      "Brasil": "https://g1.globo.com/dynamo/brasil/rss2.xml",
+      "Carros (Autoesporte.com)": "https://g1.globo.com/dynamo/carros/rss2.xml",
+      "Ciência e Saúde": "https://g1.globo.com/dynamo/ciencia-e-saude/rss2.xml",
+      "Concursos e Emprego": "https://g1.globo.com/dynamo/concursos-e-emprego/rss2.xml",
+      "Economia": "https://g1.globo.com/dynamo/economia/rss2.xml",
+      "Educação": "https://g1.globo.com/dynamo/educacao/rss2.xml",
+      "Loterias": "https://g1.globo.com/dynamo/loterias/rss2.xml",
+      "Mundo": "https://g1.globo.com/dynamo/mundo/rss2.xml",
+      "Música": "https://g1.globo.com/dynamo/musica/rss2.xml",
+      "Natureza": "https://g1.globo.com/dynamo/natureza/rss2.xml",
+      "Planeta Bizarro": "https://g1.globo.com/dynamo/planeta-bizarro/rss2.xml",
+      "Política": "https://g1.globo.com/dynamo/politica/mensalao/rss2.xml",
+      "Pop & Arte": "https://g1.globo.com/dynamo/pop-arte/rss2.xml",
+      "Tecnologia e Games": "https://g1.globo.com/dynamo/tecnologia/rss2.xml",
+      "Turismo e Viagem": "https://g1.globo.com/dynamo/turismo-e-viagem/rss2.xml"
+    };
 
-  // salvar feeds em seguida
-  try{
-    await salvarFeeds();
-    alert('Configurações salvas!');
-  }catch(_){
-    alert('Erro ao salvar feeds.');
-  }
-}
-
-async function forcarAtualizacao(){
-  try{
-    await fetch('/api/refresh', { method:'POST' });
-    alert('Player atualizado!');
-  }catch(_){
-    alert('Erro ao atualizar player.');
-  }
-}
-
-/* Lista de uploads */
-async function carregarUploads(){
-  try{
-    const r = await fetch('/api/uploads');
-    if(!r.ok) throw new Error();
-    const data = await r.json();
-
-    const lista = document.getElementById('listaUploads');
-    lista.innerHTML = '';
-
-    if(data.length === 0){
-      lista.innerHTML = '<li>Nenhum arquivo enviado ainda.</li>';
-      return;
+    function openPlayer() {
+      window.open('/index.html', '_blank');
     }
 
-    data.forEach(item=>{
-      const li = document.createElement('li');
-      const fileUrl = '/' + item.filename;
-      const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(item.filename);
-      const thumb = isImage ? `<img src="${fileUrl}" alt="preview"/>` : '<span>🎬</span>';
+    async function logout() { location.href = '/logout'; }
 
-      li.innerHTML = `
-        <div class="file-info">
-          ${thumb}
-          <a href="${fileUrl}" target="_blank">${item.filename.split('/').pop()}</a>
-        </div>
-        <button class="del-btn" onclick="excluirUpload(${item.id})">Excluir</button>
-      `;
-      lista.appendChild(li);
-    });
-  }catch(e){
-    console.error(e);
-    alert('Erro ao carregar lista de arquivos.');
-  }
-}
+    async function loadUploads() {
+      const res = await fetch('/api/uploads', {cache:'no-store'});
+      const data = await res.json();
+      const container = document.getElementById('uploads-container');
+      container.innerHTML = '';
 
-async function excluirUpload(id){
-  if(!confirm('Deseja realmente excluir este arquivo?')) return;
+      if (!data.length) {
+        container.innerHTML = '<p style="color:#777;">Nenhum arquivo enviado ainda.</p>';
+        return;
+      }
 
-  try{
-    const r = await fetch('/api/uploads/'+id, { method:'DELETE' });
-    if(!r.ok) throw new Error();
-    alert('Arquivo excluído com sucesso!');
-    carregarUploads();
-  }catch(e){
-    console.error(e);
-    alert('Erro ao excluir arquivo.');
-  }
-}
+      data.forEach(u => {
+        const card = document.createElement('div');
+        card.className = 'upload-card';
 
-/* === Controle do bloco de feeds === */
-const chkRss  = document.getElementById('disableRss'); // 1 = desative RSS
-const feedBox = document.getElementById('feedOptions');
+        if (u.filename.match(/\.(mp4|webm|ogg)$/i)) {
+          card.innerHTML = `<video src="${u.filename}" controls></video>`;
+        } else {
+          card.innerHTML = `<img src="${u.filename}" alt="">`;
+        }
 
-function toggleFeedBox(){
-  // se estiver DESABILITADO (checked), escondemos as opções
-  feedBox.style.display = chkRss.checked ? 'none' : 'block';
-}
-chkRss.addEventListener('change', toggleFeedBox);
-
-// carregar settings iniciais + feeds
-async function carregarSettingsEFeeds(){
-  try{
-    const rs = await fetch('/api/settings', { cache:'no-store' });
-    if (rs.ok){
-      const st = await rs.json();
-      document.getElementById('displayTime').value = st.display_time ?? 15000;
-      chkRss.checked = st.disable_rss ? 1 : 0;
+        const name = u.filename.split('/').pop();
+        card.innerHTML += `<small>${name}</small>`;
+        const btn = document.createElement('button');
+        btn.className = 'delete-btn';
+        btn.textContent = 'Excluir';
+        btn.onclick = () => deleteUpload(u.id);
+        card.appendChild(btn);
+        container.appendChild(card);
+      });
     }
-  }catch(e){}
 
-  toggleFeedBox();
-
-  try{
-    const r = await fetch('/api/feeds', { cache:'no-store' });
-    if (r.ok){
-      const feeds = await r.json();
-      const boxes = feedBox.querySelectorAll('input[type=checkbox]');
-      boxes.forEach(b => b.checked = feeds.includes(b.value));
+    async function deleteUpload(id) {
+      if (!confirm('Deseja excluir este arquivo?')) return;
+      await fetch('/api/uploads/' + id, { method: 'DELETE' });
+      loadUploads();
     }
-  }catch(e){}
-}
 
-// salvar feeds
-async function salvarFeeds(){
-  // se RSS estiver desativado, salvamos lista vazia
-  if (chkRss.checked){
-    await fetch('/api/feeds', {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json' },
-      body: JSON.stringify({ feeds: [] })
-    });
-    return;
-  }
-  const selecionados = Array.from(feedBox.querySelectorAll('input[type=checkbox]:checked'))
-    .map(b => b.value);
-  await fetch('/api/feeds', {
-    method:'POST',
-    headers:{ 'Content-Type':'application/json' },
-    body: JSON.stringify({ feeds: selecionados })
-  });
-}
+    async function loadSettings() {
+      const res = await fetch('/api/settings', {cache:'no-store'});
+      const cfg = await res.json();
+      document.getElementById('display_time').value = cfg.display_time;
+      document.getElementById('disable_rss').checked = !!cfg.disable_rss;
 
-// Inicialização
-window.onload = async () => {
-  await carregarSettingsEFeeds();
-  carregarUploads();
-};
-</script>
+      const feedButtons = document.getElementById('feed-buttons');
+      feedButtons.innerHTML = '';
+      const selectedFeeds = await fetch('/api/feeds').then(r=>r.json()).catch(()=>[]);
+
+      for (const [label, url] of Object.entries(feedsList)) {
+        const btn = document.createElement('div');
+        btn.className = 'feed-btn';
+        btn.textContent = label;
+        if (selectedFeeds.includes(url)) btn.classList.add('active');
+        btn.onclick = () => btn.classList.toggle('active');
+        btn.dataset.url = url;
+        feedButtons.appendChild(btn);
+      }
+    }
+
+    async function saveSettings() {
+      const display_time = document.getElementById('display_time').value;
+      const disable_rss = document.getElementById('disable_rss').checked;
+      const feeds = Array.from(document.querySelectorAll('.feed-btn.active')).map(b => b.dataset.url);
+
+      await fetch('/api/settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ display_time, disable_rss })
+      });
+
+      await fetch('/api/feeds', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ feeds })
+      });
+
+      alert('Configurações salvas!');
+      loadSettings();
+    }
+
+    async function refreshPlayers() {
+      await fetch('/api/refresh', {method:'POST'});
+      alert('Players atualizados!');
+    }
+
+    loadSettings();
+    loadUploads();
+  </script>
 </body>
 </html>
