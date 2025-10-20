@@ -1,5 +1,5 @@
 /* =========================================================
-   TV CORPORATIVA — server.js (consolidado e estável)
+   TV CORPORATIVA — server.js (consolidado, estável e corrigido)
    =========================================================
    ✅ Upload/listagem/exclusão OK
    ✅ Exclusão de usuários com limpeza de dependências
@@ -10,6 +10,7 @@
    ✅ G1 restaurado: axios+xml2js (+ UA) → fallback rss-parser
    ✅ Cache RSS em memória e disco (fallback offline)
    ✅ /api/news/me com token (hash/legado) e last_seen
+   ✅ /api/devices (listar/criar/excluir) adicionado sem quebrar rotas
    ========================================================= */
 
 const express = require("express");
@@ -59,7 +60,7 @@ app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Rate-limit leve no login
+// Rate-limit leve no login (preservado)
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
@@ -96,7 +97,7 @@ db.serialize(() => {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name TEXT,
-    token TEXT UNIQUE,   -- legado (exibido ao admin)
+    token TEXT UNIQUE,   -- legado (exibido ao admin em versões antigas)
     token_hash TEXT,     -- novo (autenticação por hash)
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     last_seen DATETIME
@@ -111,7 +112,7 @@ db.serialize(() => {
 });
 
 /* ====================== ESTÁTICOS ====================== */
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(path.join(__dirname, "public"))); // serve /public (inclui /uploads/<user_id>/)
 
 /* ====================== HELPERS ====================== */
 function requireLogin(req, res, next) {
@@ -160,12 +161,16 @@ app.get("/api/users", requireAdmin, (req, res) => {
 });
 app.post("/api/users", requireAdmin, async (req, res) => {
   const { username, password, role } = req.body;
-  const hash = await bcrypt.hash(password, 10);
-  db.run("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", [username, hash, role], function (err) {
-    if (err) return res.status(400).json({ error: "Erro ao criar usuário" });
-    db.run("INSERT OR IGNORE INTO settings (user_id) VALUES (?)", [this.lastID]);
-    res.json({ id: this.lastID });
-  });
+  try {
+    const hash = await bcrypt.hash(password, 10);
+    db.run("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", [username, hash, role], function (err) {
+      if (err) return res.status(400).json({ error: "Erro ao criar usuário" });
+      db.run("INSERT OR IGNORE INTO settings (user_id) VALUES (?)", [this.lastID]);
+      res.json({ id: this.lastID });
+    });
+  } catch (e) {
+    return res.status(500).json({ error: "Erro ao criar usuário" });
+  }
 });
 app.put("/api/users/:id", requireAdmin, async (req, res) => {
   const { password, role } = req.body;
@@ -358,7 +363,7 @@ async function fetchOneFeed(url) {
     const cat = feed.title || "G1";
     return (feed.items || []).map(item => {
       const image = (item.enclosure && item.enclosure.url)
-        || extractFirstImg(item["content:encoded"])
+        || extractFirstImg(item["content:encoded"]) 
         || extractFirstImg(item.content)
         || extractFirstImg(item.summary)
         || "";
@@ -401,6 +406,52 @@ async function fetchFeeds(feedList) {
     return [];
   }
 }
+
+/* ====================== DEVICES (listar/criar/excluir) ====================== */
+const { randomBytes } = require("crypto");
+
+// Lista devices por usuário (ADMIN)
+app.get("/api/devices", requireAdmin, (req, res) => {
+  const userId = req.query.user_id;
+  if (!userId) return res.status(400).json({ error: "Falta user_id" });
+  db.all(
+    "SELECT id, user_id, name, token, token_hash, created_at, last_seen FROM devices WHERE user_id = ? ORDER BY created_at DESC",
+    [userId],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: "Erro ao listar devices" });
+      res.json(rows || []);
+    }
+  );
+});
+
+// Cria device e retorna o token "plain" UMA ÚNICA VEZ (ADMIN)
+app.post("/api/devices", requireAdmin, (req, res) => {
+  const { user_id, name } = req.body;
+  if (!user_id) return res.status(400).json({ error: "Falta user_id" });
+
+  const plainToken = randomBytes(24).toString("hex");
+  const tokenHash = sha256Hex(plainToken);
+
+  db.run(
+    `INSERT INTO devices (user_id, name, token, token_hash, created_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+    [user_id, name || "", tokenHash, tokenHash],
+    function (err) {
+      if (err) return res.status(500).json({ error: "Erro ao criar token" });
+      const url = `${req.protocol}://${req.get("host")}/?token=${plainToken}`;
+      res.json({ id: this.lastID, token: plainToken, url });
+    }
+  );
+});
+
+// Exclui device por ID (ADMIN)
+app.delete("/api/devices/:id", requireAdmin, (req, res) => {
+  const id = req.params.id;
+  db.run("DELETE FROM devices WHERE id = ?", [id], function (err) {
+    if (err) return res.status(500).json({ error: "Erro ao remover token" });
+    if (this.changes === 0) return res.status(404).json({ error: "Token nao encontrado" });
+    res.json({ ok: true });
+  });
+});
 
 /* ====================== PLAYER / NEWS & TOKEN ====================== */
 app.get("/api/news/me", async (req, res) => {
