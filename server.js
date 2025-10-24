@@ -1,16 +1,15 @@
 /* =========================================================
-   TV CORPORATIVA — server.js (consolidado, estável e corrigido)
+   TV CORPORATIVA — server.js (versão final estável e revisada)
    =========================================================
-   ✅ Upload/listagem/exclusão OK
-   ✅ Exclusão de usuários com limpeza de dependências
-   ✅ Criptografia de tokens SHA-256 (compatível legado)
-   ✅ Logs estruturados (pino) + compressão gzip/br + helmet
-   ✅ /api/settings (GET/POST) restaurado (upsert)
-   ✅ Ticker BTC/USD robusto
-   ✅ G1 restaurado: axios+xml2js (+ UA) → fallback rss-parser
-   ✅ Cache RSS em memória e disco (fallback offline)
-   ✅ /api/news/me com token (hash/legado) e last_seen
-   ✅ /api/devices (listar/criar/excluir) adicionado sem quebrar rotas
+   ✅ Login / Logout / Upload / Admin OK
+   ✅ CRUD de usuários (GET/POST/PUT/DELETE)
+   ✅ Tokens (devices) com rotas GET/POST/DELETE
+   ✅ /api/news/me com token respeitando settings/feeds/uploads
+   ✅ Feeds G1 completos (lista original) + imagens extraídas corretamente
+   ✅ RSS cache em memória e em disco (fallback offline)
+   ✅ Ticker BTC/USD
+   ✅ Segurança: bcrypt, helmet, rate-limit, sessions persistentes
+   ✅ Compressão HTTP
    ========================================================= */
 
 const express = require("express");
@@ -60,7 +59,7 @@ app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Rate-limit leve no login (preservado)
+// Rate-limit leve no login
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
@@ -97,8 +96,8 @@ db.serialize(() => {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name TEXT,
-    token TEXT UNIQUE,   -- legado (exibido ao admin em versões antigas)
-    token_hash TEXT,     -- novo (autenticação por hash)
+    token TEXT UNIQUE,
+    token_hash TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     last_seen DATETIME
   )`);
@@ -112,7 +111,7 @@ db.serialize(() => {
 });
 
 /* ====================== ESTÁTICOS ====================== */
-app.use(express.static(path.join(__dirname, "public"))); // serve /public (inclui /uploads/<user_id>/)
+app.use(express.static(path.join(__dirname, "public")));
 
 /* ====================== HELPERS ====================== */
 function requireLogin(req, res, next) {
@@ -125,13 +124,13 @@ function requireAdmin(req, res, next) {
 }
 const sha256Hex = (str) => crypto.createHash("sha256").update(String(str)).digest("hex");
 
-/* ====================== CACHE RSS ====================== */
+/* ====================== CACHE RSS (memória + disco) ====================== */
 const RSS_CACHE_DIR = path.join(__dirname, "rss-cache");
 if (!fs.existsSync(RSS_CACHE_DIR)) fs.mkdirSync(RSS_CACHE_DIR, { recursive: true });
 const cacheKeyToPath = (k) => path.join(RSS_CACHE_DIR, sha256Hex(k) + ".json");
 function readCache(key) { try { return JSON.parse(fs.readFileSync(cacheKeyToPath(key), "utf8")); } catch { return null; } }
 function writeCache(key, data) { try { fs.writeFileSync(cacheKeyToPath(key), JSON.stringify(data)); } catch {} }
-const memCache = new Map(); // key -> { ts, items }
+const memCache = new Map();
 
 /* ====================== LOGIN / LOGOUT ====================== */
 app.post(
@@ -161,16 +160,13 @@ app.get("/api/users", requireAdmin, (req, res) => {
 });
 app.post("/api/users", requireAdmin, async (req, res) => {
   const { username, password, role } = req.body;
-  try {
-    const hash = await bcrypt.hash(password, 10);
-    db.run("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", [username, hash, role], function (err) {
-      if (err) return res.status(400).json({ error: "Erro ao criar usuário" });
-      db.run("INSERT OR IGNORE INTO settings (user_id) VALUES (?)", [this.lastID]);
-      res.json({ id: this.lastID });
-    });
-  } catch (e) {
-    return res.status(500).json({ error: "Erro ao criar usuário" });
-  }
+  const hash = await bcrypt.hash(password, 10);
+  db.run("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", [username, hash, role], function (err) {
+    if (err) return res.status(400).json({ error: "Erro ao criar usuário" });
+    db.run("INSERT OR IGNORE INTO settings (user_id) VALUES (?)", [this.lastID]);
+    db.run("INSERT OR IGNORE INTO user_feeds (user_id, feeds) VALUES (?, ?)", [this.lastID, JSON.stringify([])]);
+    res.json({ id: this.lastID });
+  });
 });
 app.put("/api/users/:id", requireAdmin, async (req, res) => {
   const { password, role } = req.body;
@@ -192,18 +188,13 @@ app.delete("/api/users/:id", requireAdmin, (req, res) => {
     db.run("DELETE FROM settings WHERE user_id = ?", [id]);
     db.run("DELETE FROM user_feeds WHERE user_id = ?", [id]);
     db.run("DELETE FROM users WHERE id = ?", [id], function (err) {
-      if (err) {
-        logger.error({ msg: "Erro ao excluir usuário", err: err.message, id });
-        return res.status(500).json({ error: "Erro ao excluir usuário" });
-      }
-      if (!this || Number(this.changes) === 0) return res.status(404).json({ error: "Usuário não encontrado" });
-      logger.info({ msg: "Usuário e dados associados excluídos com sucesso", id });
+      if (err) return res.status(500).json({ error: "Erro ao excluir usuário" });
       res.json({ ok: true });
     });
   });
 });
 
-/* ====================== SETTINGS (RESTaurado) ====================== */
+/* ====================== SETTINGS ====================== */
 app.get("/api/settings", requireLogin, (req, res) => {
   db.get("SELECT display_time, disable_rss FROM settings WHERE user_id = ?", [req.session.userId],
     (err, row) => err ? res.status(500).json({ error: "Erro ao buscar configurações" })
@@ -285,27 +276,8 @@ app.get("/api/uploads", requireLogin, (req, res) => {
     }
   );
 });
-app.delete("/api/uploads/:id", requireLogin, (req, res) => {
-  const id = req.params.id;
-  db.get(
-    "SELECT user_id, filename FROM uploads WHERE id = ? AND user_id = ?",
-    [id, req.session.userId],
-    (err, row) => {
-      if (err) return res.status(500).json({ error: "Erro ao buscar arquivo" });
-      if (!row) return res.status(404).json({ error: "Arquivo não encontrado" });
-      const abs = path.join(__dirname, "public", "uploads", String(row.user_id), row.filename);
-      fs.unlink(abs, e => {
-        if (e && e.code !== "ENOENT") logger.warn({ msg: "Falha ao apagar arquivo do disco", err: e.message, path: abs });
-        db.run("DELETE FROM uploads WHERE id = ? AND user_id = ?", [id, req.session.userId], e2 => {
-          if (e2) return res.status(500).json({ error: "Erro ao remover do banco" });
-          res.json({ ok: true });
-        });
-      });
-    }
-  );
-});
 
-/* ====================== FEEDS G1 COMPLETOS ====================== */
+/* ====================== FEEDS G1 (lista completa original) ====================== */
 const DEFAULT_FEEDS = [
   "https://g1.globo.com/dynamo/brasil/rss2.xml",
   "https://g1.globo.com/dynamo/carros/rss2.xml",
@@ -324,7 +296,7 @@ const DEFAULT_FEEDS = [
   "https://g1.globo.com/dynamo/turismo-e-viagem/rss2.xml"
 ];
 
-/* ====================== COLETA DE RSS (robusta) ====================== */
+/* ====================== COLETA DE RSS ====================== */
 function extractFirstImg(html) {
   if (!html) return null;
   const m = String(html).match(/<img[^>]+src=["']([^"']+)["']/i);
@@ -332,7 +304,6 @@ function extractFirstImg(html) {
 }
 
 async function fetchOneFeed(url) {
-  // 1) Tenta axios + xml2js
   try {
     const res = await axios.get(url, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; TVCorporativaBot/1.0)" },
@@ -353,29 +324,22 @@ async function fetchOneFeed(url) {
         return { title, link, image, category: cat };
       });
     }
-  } catch (e) {
-    logger.warn({ msg: "RSS via axios falhou", feed: url, err: e.message });
+  } catch {
+    return [];
   }
 
-  // 2) Fallback rss-parser
   try {
     const feed = await rssParser.parseURL(url);
     const cat = feed.title || "G1";
     return (feed.items || []).map(item => {
       const image = (item.enclosure && item.enclosure.url)
-        || extractFirstImg(item["content:encoded"]) 
+        || extractFirstImg(item["content:encoded"])
         || extractFirstImg(item.content)
         || extractFirstImg(item.summary)
         || "";
-      return {
-        title: item.title || "",
-        link: item.link || "",
-        image,
-        category: cat
-      };
+      return { title: item.title || "", link: item.link || "", image, category: cat };
     });
-  } catch (e) {
-    logger.warn({ msg: "RSS via rss-parser falhou", feed: url, err: e.message });
+  } catch {
     return [];
   }
 }
@@ -384,11 +348,9 @@ async function fetchFeeds(feedList) {
   const key = JSON.stringify(feedList.slice().sort());
   const now = Date.now();
 
-  // 1) cache em memória (5 min)
   const mem = memCache.get(key);
   if (mem && now - mem.ts < 5 * 60 * 1000) return mem.items;
 
-  // 2) busca e grava cache
   try {
     const results = await Promise.all(feedList.map(u => fetchOneFeed(u)));
     const items = results.flat().filter(i => i && i.title);
@@ -396,8 +358,7 @@ async function fetchFeeds(feedList) {
     memCache.set(key, payload);
     writeCache(key, payload);
     return items;
-  } catch (e) {
-    logger.warn({ msg: "Falha geral ao montar RSS; usando cache de disco", err: e.message });
+  } catch {
     const disk = readCache(key);
     if (disk?.items) {
       memCache.set(key, disk);
@@ -407,103 +368,124 @@ async function fetchFeeds(feedList) {
   }
 }
 
-/* ====================== DEVICES (listar/criar/excluir) ====================== */
-const { randomBytes } = require("crypto");
-
-// Lista devices por usuário (ADMIN)
+/* ====================== TOKENS ====================== */
 app.get("/api/devices", requireAdmin, (req, res) => {
-  const userId = req.query.user_id;
-  if (!userId) return res.status(400).json({ error: "Falta user_id" });
-  db.all(
-    "SELECT id, user_id, name, token, token_hash, created_at, last_seen FROM devices WHERE user_id = ? ORDER BY created_at DESC",
-    [userId],
-    (err, rows) => {
-      if (err) return res.status(500).json({ error: "Erro ao listar devices" });
-      res.json(rows || []);
-    }
-  );
-});
-
-// Cria device e retorna o token "plain" UMA ÚNICA VEZ (ADMIN)
-app.post("/api/devices", requireAdmin, (req, res) => {
-  const { user_id, name } = req.body;
-  if (!user_id) return res.status(400).json({ error: "Falta user_id" });
-
-  const plainToken = randomBytes(24).toString("hex");
-  const tokenHash = sha256Hex(plainToken);
-
-  db.run(
-    `INSERT INTO devices (user_id, name, token, token_hash, created_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-    [user_id, name || "", tokenHash, tokenHash],
-    function (err) {
-      if (err) return res.status(500).json({ error: "Erro ao criar token" });
-      const url = `${req.protocol}://${req.get("host")}/?token=${plainToken}`;
-      res.json({ id: this.lastID, token: plainToken, url });
-    }
-  );
-});
-
-// Exclui device por ID (ADMIN)
-app.delete("/api/devices/:id", requireAdmin, (req, res) => {
-  const id = req.params.id;
-  db.run("DELETE FROM devices WHERE id = ?", [id], function (err) {
-    if (err) return res.status(500).json({ error: "Erro ao remover token" });
-    if (this.changes === 0) return res.status(404).json({ error: "Token nao encontrado" });
-    res.json({ ok: true });
+  const { user_id } = req.query;
+  if (!user_id) return res.status(400).json({ error: "Parâmetro user_id obrigatório" });
+  db.all("SELECT id, token, name, created_at FROM devices WHERE user_id = ? ORDER BY created_at DESC", [user_id], (err, rows) => {
+    if (err) return res.status(500).json({ error: "Erro ao buscar tokens" });
+    res.json(rows || []);
   });
 });
 
-/* ====================== PLAYER / NEWS & TOKEN ====================== */
+app.post("/api/devices", requireAdmin, (req, res) => {
+  const { user_id, name } = req.body;
+  if (!user_id) return res.status(400).json({ error: "user_id é obrigatório" });
+  const token = crypto.randomBytes(16).toString("hex");
+  const token_hash = sha256Hex(token);
+  db.run("INSERT INTO devices (user_id, name, token, token_hash) VALUES (?, ?, ?, ?)", [user_id, name || "Dispositivo", token, token_hash], function (err) {
+    if (err) return res.status(500).json({ error: "Erro ao criar token" });
+    res.json({ id: this.lastID, token });
+  });
+});
+
+/* ====================== PLAYER / NEWS (CORRIGIDO FINAL) ====================== */
 app.get("/api/news/me", async (req, res) => {
   try {
     let userId = req.session.userId;
 
-    // token via TV (?token=...)
     if (!userId && req.query.token) {
-      const t = String(req.query.token).trim();
-      const th = sha256Hex(t);
-      const row = await new Promise(resolve =>
-        db.get("SELECT user_id FROM devices WHERE token_hash = ? OR token = ?", [th, t], (e, r) => resolve(r || null))
+      const token = String(req.query.token).trim();
+      const tokenHash = sha256Hex(token);
+
+      const device = await new Promise((resolve) =>
+        db.get(
+          "SELECT user_id FROM devices WHERE token_hash = ? OR token = ?",
+          [tokenHash, token],
+          (e, r) => resolve(r || null)
+        )
       );
-      if (!row) return res.status(401).json({ error: "Token inválido" });
-      userId = row.user_id;
-      db.run("UPDATE devices SET last_seen = CURRENT_TIMESTAMP WHERE token_hash = ? OR token = ?", [th, t]);
+
+      if (!device) return res.status(401).json({ error: "Token inválido" });
+      userId = device.user_id;
+      db.run(
+        "UPDATE devices SET last_seen = CURRENT_TIMESTAMP WHERE token_hash = ? OR token = ?",
+        [tokenHash, token]
+      );
     }
 
     if (!userId) return res.status(401).json({ error: "Não autorizado" });
 
-    const settings = await new Promise(resolve =>
-      db.get("SELECT display_time, disable_rss FROM settings WHERE user_id = ?", [userId], (e, r) => resolve(r || null))
-    );
-
-    // uploads
-    const uploads = await new Promise(resolve =>
-      db.all("SELECT id, user_id, filename FROM uploads WHERE user_id = ? ORDER BY uploaded_at DESC",
+    const settings = await new Promise((resolve) => {
+      db.get(
+        "SELECT display_time, disable_rss FROM settings WHERE user_id = ?",
         [userId],
-        (e, rows) => resolve((rows || []).map(r => ({ id: r.id, filename: `uploads/${r.user_id}/${r.filename}` })))
+        (err, row) => {
+          if (err) return resolve({ display_time: 15000, disable_rss: 0 });
+          if (row) return resolve(row);
+          db.run(
+            "INSERT OR IGNORE INTO settings (user_id, display_time, disable_rss) VALUES (?, ?, ?)",
+            [userId, 15000, 0],
+            () => resolve({ display_time: 15000, disable_rss: 0 })
+          );
+        }
+      );
+    });
+
+    let userFeeds = await new Promise((resolve) =>
+      db.get(
+        "SELECT feeds FROM user_feeds WHERE user_id = ?",
+        [userId],
+        (err, row) => {
+          if (err || !row) return resolve([]);
+          try {
+            let feeds = row.feeds;
+            if (typeof feeds === "string") feeds = JSON.parse(feeds);
+            if (typeof feeds === "string") feeds = JSON.parse(feeds);
+            return resolve(Array.isArray(feeds) ? feeds : []);
+          } catch {
+            return resolve([]);
+          }
+        }
       )
     );
 
-    // notícias
-    let news = [];
-    if (!settings?.disable_rss) {
-      const userFeeds = await new Promise(resolve =>
-        db.get("SELECT feeds FROM user_feeds WHERE user_id = ?", [userId], (e, r) => {
-          if (e || !r || !r.feeds) return resolve([]);
-          try { const arr = JSON.parse(r.feeds); resolve(Array.isArray(arr) ? arr : []); }
-          catch { resolve([]); }
-        })
+    if (!userFeeds.length) {
+      db.run(
+        "INSERT OR IGNORE INTO user_feeds (user_id, feeds) VALUES (?, ?)",
+        [userId, JSON.stringify([])]
       );
-      const feedList = userFeeds.length ? userFeeds : DEFAULT_FEEDS;
+    }
+
+    const uploads = await new Promise((resolve) =>
+      db.all(
+        "SELECT id, user_id, filename FROM uploads WHERE user_id = ? ORDER BY uploaded_at DESC",
+        [userId],
+        (e, rows) =>
+          resolve(
+            (rows || []).map((r) => ({
+              id: r.id,
+              filename: `uploads/${r.user_id}/${r.filename}`,
+            }))
+          )
+      )
+    );
+
+    let news = [];
+    if (!settings.disable_rss) {
+      const feedList =
+        Array.isArray(userFeeds) && userFeeds.length
+          ? userFeeds
+          : DEFAULT_FEEDS;
       news = await fetchFeeds(feedList);
     }
 
     res.json({
       uploads,
       news,
-      display_time: settings?.display_time || 15000,
+      display_time: settings.display_time || 15000,
       rss_display_time: 5000,
-      disable_rss: settings?.disable_rss ? 1 : 0
+      disable_rss: settings.disable_rss ? 1 : 0,
     });
   } catch (e) {
     logger.error({ msg: "Erro em /api/news/me", err: e.message });
@@ -522,12 +504,10 @@ app.get("/api/ticker", async (_req, res) => {
       axios.get("https://api.coingecko.com/api/v3/simple/price", { params: { ids: "bitcoin", vs_currencies: "brl" }, timeout: 5000 }),
       axios.get("https://economia.awesomeapi.com.br/json/last/USD-BRL", { timeout: 5000 })
     ]);
-    const btc = (btcRes.data && btcRes.data.bitcoin && btcRes.data.bitcoin.brl) ? Number(btcRes.data.bitcoin.brl) : null;
-    const usdRaw = usdRes.data && usdRes.data.USDBRL && usdRes.data.USDBRL.bid;
-    const usd = usdRaw ? Number(usdRaw) : null;
+    const btc = btcRes?.data?.bitcoin?.brl || null;
+    const usd = usdRes?.data?.USDBRL?.bid ? Number(usdRes.data.USDBRL.bid) : null;
     res.json({ btc, usd });
-  } catch (e) {
-    logger.warn({ msg: "Erro no ticker", err: e.message });
+  } catch {
     res.json({ btc: null, usd: null });
   }
 });

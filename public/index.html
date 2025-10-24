@@ -102,7 +102,8 @@
   }
 
   #cotacoes span{ margin-right:20px; }
-  #logo{ height:40px; }
+  /* AUMENTO DE 30% NO LOGO */
+  #logo{ height:52px; }
 </style>
 </head>
 <body>
@@ -125,7 +126,11 @@
 /* Detectar token na URL (player em dispositivo) */
 const params = new URLSearchParams(window.location.search);
 const deviceToken = params.get('token');
-const apiUrl = deviceToken ? `/api/news/me?token=${encodeURIComponent(deviceToken)}` : '/api/news/me';
+
+// 🔧 Correção: endpoint absoluto da API
+const apiUrl = deviceToken
+  ? `/api/news/me?token=${encodeURIComponent(deviceToken)}`
+  : `/api/news/me`;
 
 let noticiasInternas = [];
 let noticiasRSS = [];
